@@ -247,3 +247,18 @@ test('Handle `this` correctly', t => {
 
   t.is(obj.greet('Jane'), 'Hello Hello Jane Doe');
 });
+
+test('Handle optional arguments', t => {
+  const join = midwrap((data, separator) => data.join(separator || ' '));
+
+  t.is(join(['Jane', 'Bloggs'], '.'), 'Jane.Bloggs');
+  t.is(join(['Jane', 'Bloggs']), 'Jane Bloggs');
+
+  join.use((data, separator, next) => {
+    const sep = separator || ' ';
+    return next(data, sep + sep);
+  });
+
+  t.is(join(['Jane', 'Bloggs'], '.'), 'Jane..Bloggs');
+  t.is(join(['Jane', 'Bloggs']), 'Jane  Bloggs');
+});
