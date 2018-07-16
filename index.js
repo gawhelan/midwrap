@@ -2,23 +2,15 @@ function midwrap(...fullStack) {
   let stack = fullStack;
   const target = stack.pop();
 
-  function wrapper(...initialArgs) {
-    const it = stack[Symbol.iterator]();
-    let currentArgs = initialArgs;
+  function wrapper(...args) {
+    const chain = [...stack]
+      .reverse()
+      .reduce(
+        (next, middleware) => middleware.call(this, next).bind(this),
+        target.bind(this),
+      );
 
-    const next = (...args) => {
-      const { done, value: middleware } = it.next();
-
-      currentArgs = args.length === 0 ? currentArgs : args;
-
-      if (done) {
-        return target.call(this, ...currentArgs);
-      }
-
-      return middleware.call(this, ...currentArgs, next);
-    };
-
-    return next(...currentArgs);
+    return chain.call(this, ...args);
   }
 
   wrapper.use = (...middleware) => {

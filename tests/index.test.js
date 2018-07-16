@@ -2,14 +2,16 @@ const test = require('ava');
 
 const midwrap = require('../index.js');
 
-const prependAlphaToReturnValue = (str, next) => `alpha ${next()}`;
-const prependBetaToReturnValue = (str, next) => `beta ${next()}`;
-const prependGammaToReturnValue = (str, next) => `gamma ${next()}`;
+const prependAlphaToReturnValue = next => str => `alpha ${next(str)}`;
+const prependBetaToReturnValue = next => str => `beta ${next(str)}`;
+const prependGammaToReturnValue = next => str => `gamma ${next(str)}`;
 
-const prependAlphaToArgument = (str, next) => next(`alpha ${str}`);
-const prependBetaToArgument = (str, next) => next(`beta ${str}`);
+const prependAlphaToArgument = next => str => next(`alpha ${str}`);
+const prependBetaToArgument = next => str => next(`beta ${str}`);
 
 const makeUpperCase = str => str.toUpperCase();
+
+const sum = (...args) => args.reduce((total, n) => total + n, 0);
 
 test('No middleware applied', t => {
   const func = midwrap(makeUpperCase);
@@ -22,19 +24,39 @@ test('Empty middleware passing value', t => {
 
   t.is(func('foo'), 'FOO');
 
-  func.use((value, next) => next(value));
+  func.use(next => value => next(value));
 
   t.is(func('foo'), 'FOO');
 });
 
-test('Empty middleware not passing value', t => {
-  const func = midwrap(makeUpperCase);
+test('Middleware passing all args', t => {
+  const func = midwrap(sum);
 
-  t.is(func('foo'), 'FOO');
+  t.is(func(1, 2, 3), 6);
 
-  func.use((value, next) => next());
+  func.use(next => (...args) => next(...args));
 
-  t.is(func('foo'), 'FOO');
+  t.is(func(1, 2, 3), 6);
+});
+
+test('Middleware passing some args', t => {
+  const func = midwrap(sum);
+
+  t.is(func(1, 2, 3), 6);
+
+  func.use(next => (arg1, arg2) => next(arg1, arg2));
+
+  t.is(func(1, 2, 3), 3);
+});
+
+test('Middleware passing no args', t => {
+  const func = midwrap(sum);
+
+  t.is(func(1, 2, 3), 6);
+
+  func.use(next => () => next());
+
+  t.is(func(1, 2, 3), 0);
 });
 
 test('Single mutating middleware', t => {
@@ -223,7 +245,7 @@ test('Removing non-existing middleware', t => {
   t.is(func('foo'), 'alpha beta FOO');
 });
 
-test('Handle `this` correctly', t => {
+test('Pass `this` correctly through middleware', t => {
   const obj = {
     greeting: 'Hello',
     greet(name) {
@@ -237,15 +259,59 @@ test('Handle `this` correctly', t => {
 
   t.is(obj.greet('Jane'), 'Hello Jane');
 
-  obj.greet.use(function greet(name, next) {
-    return next(`${this.greeting} ${name}`);
-  });
+  function midware(next) {
+    return function inner(name) {
+      return next(`${name} Doe`);
+    };
+  }
+
+  obj.greet.use(midware);
+
+  t.is(obj.greet('Jane'), 'Hello Jane Doe');
+});
+
+test('Pass `this` correctly through arrow function middleware', t => {
+  const obj = {
+    greeting: 'Hello',
+    greet(name) {
+      return `${this.greeting} ${name}`;
+    },
+  };
+
+  t.is(obj.greet('Jane'), 'Hello Jane');
+
+  obj.greet = midwrap(obj.greet);
+
+  t.is(obj.greet('Jane'), 'Hello Jane');
+
+  obj.greet.use(next => name => next(`${name} Doe`));
+
+  t.is(obj.greet('Jane'), 'Hello Jane Doe');
+});
+
+test('Pass `this` correctly to middleware', t => {
+  const obj = {
+    greeting: 'Hello',
+    greet(name) {
+      return `${this.greeting} ${name}`;
+    },
+  };
+
+  t.is(obj.greet('Jane'), 'Hello Jane');
+
+  obj.greet = midwrap(obj.greet);
+
+  t.is(obj.greet('Jane'), 'Hello Jane');
+
+  function midware(next) {
+    return function inner(name) {
+      return next(`${this.greeting} ${name}`);
+    };
+  }
+
+  obj.greet.use(midware);
 
   t.is(obj.greet('Jane'), 'Hello Hello Jane');
-
-  obj.greet.use((name, next) => next(`${name} Doe`));
-
-  t.is(obj.greet('Jane'), 'Hello Hello Jane Doe');
 });
 
 test('Handle optional arguments', t => {
@@ -254,7 +320,7 @@ test('Handle optional arguments', t => {
   t.is(join(['Jane', 'Bloggs'], '.'), 'Jane.Bloggs');
   t.is(join(['Jane', 'Bloggs']), 'Jane Bloggs');
 
-  join.use((data, separator, next) => {
+  join.use(next => (data, separator) => {
     const sep = separator || ' ';
     return next(data, sep + sep);
   });
